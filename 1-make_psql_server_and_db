@@ -1,0 +1,8 @@
+sudo apt install postgresql
+sudo su postgres
+psql
+CREATE USER "user" WITH PASSWORD 'password';
+ALTER USER user with SUPERUSER;
+CREATE DATABASE "example";
+\q
+exit
