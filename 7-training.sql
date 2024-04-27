@@ -46,3 +46,64 @@ INSERT INTO aircrafts_tmp
     DO UPDATE SET model = excluded.model,
     range = excluded.range
     RETURNING *;
+
+
+WITH update_row AS
+( UPDATE aircrafts_tmp
+        SET range = range * 1.2
+        WHERE model ~ '^Bom'
+        RETURNING *
+)
+INSERT INTO aircrafts_log
+    SELECT ur.aircraft_code, ur.model, ur.range,
+        current_timestamp, 'UPDATE'
+FROM update_row ur;
+
+CREATE TEMP TABLE tickets_directions AS
+SELECT DISTINCT departure_city, arrival_city FROM routes;
+
+ALTER TABLE tickets_directions
+    ADD COLUMN last_ticket_time timestamp;
+
+ALTER TABLE tickets_directions
+    ADD COLUMN tickets_num integer DEFAULT 0;
+
+CREATE TEMP TABLE ticket_flights_tmp AS
+    SELECT * FROM ticket_flights WITH NO DATA;
+
+ALTER TABLE ticket_flights_tmp
+    ADD PRIMARY KEY ( ticket_no, flight_id );
+
+WITH sell_ticket AS
+( INSERT INTO ticket_flights_tmp
+    ( ticket_no, flight_id, fare_conditions, amount )
+    VALUES ( '1234567890123', 30829, 'Economy', 12800 )
+    RETURNING *
+)
+UPDATE tickets_directions td
+    SET last_ticket_time = current_timestamp,
+        tickets_num = tickets_num + 1
+WHERE ( td.departure_city, td.arrival_city ) =
+    ( SELECT departure_city, arrival_city
+        FROM flights_v
+        WHERE flight_id = ( SELECT flight_id FROM sell_ticket )
+);
+
+
+WITH min_ranges AS
+( SELECT aircraft_code,
+        rank() OVER (
+            PARTITION BY left( model, 6 )
+            ORDER BY range
+        ) AS rank
+    FROM aircrafts_tmp
+    WHERE model ~ '^Аэробус' OR model ~ '^Боинг'
+)
+DELETE FROM aircrafts_tmp a
+    USING min_ranges mr
+    WHERE a.aircraft_code = mr.aircraft_code
+    AND mr.rank = 1
+    RETURNING *;
+
+DELETE FROM aircrafts_tmp;
+TRUNCATE aircrafts_tmp; -- Удаляет все строки из таблиц
